@@ -261,6 +261,20 @@ add_header_priority_item(struct curl_slist *sl, DynamicBuffer *dbuf, int priorit
 	return add_header_item(sl, dbuf, "X-Priority: ", buffer);
 }
 
+/* Actually only checks if there is @ and a . after - to differentiate emails from names */
+
+static bool
+is_email(char *str)
+{
+	char* pointer = strchr(str, '@');
+	if (pointer == NULL)
+		return false;
+	pointer = strchr(pointer, '.');
+	if (pointer == NULL)
+		return false;
+	return true;
+}
+
 /*
  * Parse string as comma delimited list.
  *
@@ -274,14 +288,16 @@ add_fields(struct curl_slist *sl, char *str)
 	if (!str)
 		return sl;
 
-	tok = strtok(str, ",");
+	tok = strtok(str, ",<>\"");
 	while (tok)
 	{
-		sl = curl_slist_append(sl, tok);
-		if (!sl)
-			elog(ERROR, "out of memory");
-
-		tok = strtok(NULL, ",");
+		if (is_email(tok))
+		{
+			sl = curl_slist_append(sl, tok);
+			if (!sl)
+				elog(ERROR, "out of memory");
+		}
+		tok = strtok(NULL, ",<>\"");
 	}
 
 	return sl;
@@ -482,23 +498,19 @@ orafce_send_mail(char *sender,
 
 		PG_TRY();
 		{
-			OOM_CHECK(curl_easy_setopt(curl, CURLOPT_URL, orafce_smtp_url));
-
-			if (orafce_smtp_userpwd)
-				OOM_CHECK(curl_easy_setopt(curl, CURLOPT_USERPWD, orafce_smtp_userpwd));
+			OOM_CHECK(curl_easy_setopt(curl, CURLOPT_URL, orafce_smtp_url));  
 
 			if (strncmp(orafce_smtp_url, "smtps://", 8) == 0)
-				(void) curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);
+			{
+				(void) curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_ALL);			
+				curl_easy_setopt(curl, CURLOPT_NETRC, CURL_NETRC_OPTIONAL);
+			}
 
 #if LIBCURL_VERSION_NUM >= 0x074500 /* 7.69.0 */
 			(void) curl_easy_setopt(curl, CURLOPT_MAIL_RCPT_ALLLOWFAILS, 1L);
 #endif
 
 			OOM_CHECK(curl_easy_setopt(curl, CURLOPT_MAIL_FROM, sender));
-
-			recip = add_fields(recip, recipients);
-
-			(void) curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recip);
 
 			/*
 			 * curl http header is working only when MIME is used. Without
@@ -521,6 +533,12 @@ orafce_send_mail(char *sender,
 			headers = add_header_item(headers, _dbuf, "Reply-To: ", replyto);
 			headers = add_header_priority_item(headers, _dbuf, priority, priority_is_null);
 			headers = add_header_item(headers, _dbuf, "Subject: ", subject);
+
+			recip = add_fields(recip, recipients);
+			recip = add_fields(recip, cc);
+			recip = add_fields(recip, bcc);
+
+			(void) curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recip);
 
 			/*
 			 * When there are an attachment, then we make multipart mime

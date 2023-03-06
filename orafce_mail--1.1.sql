@@ -8,6 +8,23 @@ CREATE SCHEMA dbms_mail;
 GRANT USAGE ON SCHEMA utl_mail TO PUBLIC;
 GRANT USAGE ON SCHEMA dbms_mail TO PUBLIC;
 
+/*
+ * There is not dependency between roles and extensions?
+ */
+DO $$
+BEGIN
+  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail') THEN
+    CREATE ROLE orafce_mail NOLOGIN;
+  END IF;
+  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail_config_url') THEN
+    CREATE ROLE orafce_mail_config_url NOLOGIN;
+  END IF;
+  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail_config_userpwd') THEN
+    CREATE ROLE orafce_mail_config_userpwd NOLOGIN;
+  END IF;
+END;
+$$;
+
 CREATE PROCEDURE utl_mail.send(
 	sender oracle.varchar2,
 	recipients oracle.varchar2,
@@ -65,20 +82,3 @@ CREATE PROCEDURE dbms_mail.send(
 	body oracle.varchar2)
 AS 'MODULE_PATHNAME','orafce_mail_dbms_mail_send'
 LANGUAGE C;
-
-/*
- * There is not dependency between roles and extensions?
- */
-DO $$
-BEGIN
-  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail') THEN
-    CREATE ROLE orafce_mail NOLOGIN;
-  END IF;
-  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail_config_url') THEN
-    CREATE ROLE orafce_mail_config_url NOLOGIN;
-  END IF;
-  IF NOT EXISTS(SELECT * FROM pg_roles WHERE rolname::text = 'orafce_mail_config_userpwd') THEN
-    CREATE ROLE orafce_mail_config_userpwd NOLOGIN;
-  END IF;
-END;
-$$;
